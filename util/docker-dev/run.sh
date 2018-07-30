@@ -112,7 +112,7 @@ if [[ "${INSPECT_STATUS}" != 0 ]] || [[ "${PR}" == "r" ]]; then
   wptd_useradd
 
   info "Ensuring the home directory is owned by the user..."
-  wptd_chown "/home/user"
+  wptd_chown "/home/user" || warn "Failed setting home directory ownership"
 
   if [[ "${RESULTS_ANALYSIS}" == "true" ]]
   then
