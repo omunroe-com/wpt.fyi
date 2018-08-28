@@ -27,6 +27,7 @@ type AutocompleteResult struct {
 	// the complete query string being recommended. The client is responsibile for
 	// fitting it to any substring(s) already appearing in a search UI.
 	QueryString string `json:"query_string"`
+	TestPath    string `json:"test_path,omitempty"`
 }
 
 // AutocompleteResponse contains a response to autocmplete API calls.
@@ -127,7 +128,7 @@ func prepareAutocompleteResponse(limit int, filters *shared.QueryFilter, testRun
 	for fileInterface := range fileSet.Iter() {
 		file := fileInterface.(string)
 		if strings.Contains(file, filters.Q) {
-			files = append(files, AutocompleteResult{file})
+			files = append(files, AutocompleteResult{file, file})
 		}
 	}
 

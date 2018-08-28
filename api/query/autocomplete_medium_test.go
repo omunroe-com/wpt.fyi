@@ -104,8 +104,8 @@ func TestAutocompleteHandler(t *testing.T) {
 
 	assert.Equal(t, AutocompleteResponse{
 		Suggestions: []AutocompleteResult{
-			AutocompleteResult{"/b/c"},
-			AutocompleteResult{"/a/b/c"},
+			AutocompleteResult{"/b/c", "/b/c"},
+			AutocompleteResult{"/a/b/c", "/a/b/c"},
 		},
 	}, data)
 	assert.True(t, rs[0].IsClosed())

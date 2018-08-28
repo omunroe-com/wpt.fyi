@@ -120,6 +120,9 @@ found in the LICENSE file.
         for (const result of json.results) {
           const option = document.createElement('option');
           option.setAttribute('value', result.query_string);
+          if (option.test_path) {
+            option.setAttribute('test-path', result.test_path);
+          }
           datalist.appendChild(option);
         }
       }
@@ -157,13 +160,28 @@ found in the LICENSE file.
 
       handleChange(e) {
         const opts = Array.from(this.shadowRoot.querySelectorAll('option'))
-          .map(elem => elem.getAttribute('value').toLowerCase());
+          .map(elem => {
+            return {
+              value: elem.getAttribute('value').toLowerCase(),
+              test: elem.getAttribute('test-path'),
+            };
+          });
         if (opts.length === 0) {
           return;
         }
 
         const value = e.target.value.toLowerCase();
 
+        for (const opt of opts) {
+          if (opt.value === value) {
+            if (opt.test) {
+              // TODO: Navigate.
+              console.log('Navigate to test', opt.test);
+            } else {
+              this.commitQuery();
+            }
+          }
+        }
         if (opts.includes(value)) {
           this.commitQuery();
         }

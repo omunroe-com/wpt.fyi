@@ -21,9 +21,11 @@ func TestByQueryIndex_standard(t *testing.T) {
 		rs: []AutocompleteResult{
 			AutocompleteResult{
 				QueryString: "ab",
+				TestPath:    "ab",
 			},
 			AutocompleteResult{
 				QueryString: "ba",
+				TestPath:    "ba",
 			},
 		},
 	}
@@ -34,9 +36,11 @@ func TestByQueryIndex_standard(t *testing.T) {
 	bqi.Swap(0, 1)
 	assert.Equal(t, AutocompleteResult{
 		QueryString: "ba",
+		TestPath:    "ba",
 	}, bqi.rs[0])
 	assert.Equal(t, AutocompleteResult{
 		QueryString: "ab",
+		TestPath:    "ab",
 	}, bqi.rs[1])
 }
 
@@ -46,9 +50,11 @@ func TestByQueryIndex_lexFallback(t *testing.T) {
 		rs: []AutocompleteResult{
 			AutocompleteResult{
 				QueryString: "xab",
+				TestPath:    "xab",
 			},
 			AutocompleteResult{
 				QueryString: "yab",
+				TestPath:    "yab",
 			},
 		},
 	}
@@ -163,9 +169,9 @@ func TestPrepareAutocompleteResponse_several(t *testing.T) {
 
 	resp := prepareAutocompleteResponse(50, &filters, testRuns, summaries)
 	assert.Equal(t, []AutocompleteResult{
-		AutocompleteResult{"/b/c"},
-		AutocompleteResult{"/a/b/c"},
-		AutocompleteResult{"/z/b/c"},
+		AutocompleteResult{"/b/c", "/b/c"},
+		AutocompleteResult{"/a/b/c", "/a/b/c"},
+		AutocompleteResult{"/z/b/c", "/z/b/c"},
 	}, resp.Suggestions)
 }
 
@@ -199,7 +205,7 @@ func TestPrepareAutocompleteResponse_limited(t *testing.T) {
 
 	resp := prepareAutocompleteResponse(2, &filters, testRuns, summaries)
 	assert.Equal(t, []AutocompleteResult{
-		AutocompleteResult{"/b/c"},
-		AutocompleteResult{"/a/b/c"},
+		AutocompleteResult{"/b/c", "/b/c"},
+		AutocompleteResult{"/a/b/c", "/a/b/c"},
 	}, resp.Suggestions)
 }
