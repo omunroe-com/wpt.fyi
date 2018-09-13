@@ -7,6 +7,7 @@ package shared
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"golang.org/x/net/context"
+	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/memcache"
 	"google.golang.org/appengine/urlfetch"
 )
@@ -22,6 +24,8 @@ import (
 var (
 	errNewReadCloserExpectedString        = errors.New("NewReadCloser(arg) expected arg string")
 	errMemcacheWriteCloserWriteAfterClose = errors.New("memcacheWriteCloser: Write() after Close()")
+	errByteCachedStoreExpectedByteSlice   = errors.New("contextualized byte CachedStore expected []byte output arg")
+	errDatastoreObjectStoreExpectedInt64  = errors.New("datastore ObjectStore expected int64 ID")
 )
 
 // Readable is a provider interface for an io.ReadCloser.
@@ -200,17 +204,22 @@ func NewMemcacheReadWritable(ctx context.Context) ReadWritable {
 // when entities are not found, read from a store and write the result to the
 // cache.
 type CachedStore interface {
-	Get(cacheID, storeID interface{}) ([]byte, error)
+	Get(cacheID, storeID, value interface{}) error
 }
 
-type ctxCachedStore struct {
+type byteCachedStore struct {
 	ctx   context.Context
 	cache ReadWritable
 	store Readable
 }
 
-func (cs ctxCachedStore) Get(cacheID, storeID interface{}) ([]byte, error) {
+func (cs byteCachedStore) Get(cacheID, storeID, iValue interface{}) error {
 	logger := cs.ctx.Value(DefaultLoggerCtxKey()).(Logger)
+	value, ok := iValue.([]byte)
+	if !ok {
+		return errByteCachedStoreExpectedByteSlice
+	}
+
 	cr, err := cs.cache.NewReadCloser(cacheID)
 	if err == nil {
 		defer func() {
@@ -220,18 +229,19 @@ func (cs ctxCachedStore) Get(cacheID, storeID interface{}) ([]byte, error) {
 		}()
 		cached, err := ioutil.ReadAll(cr)
 		if err == nil {
-			logger.Infof("Serving summary from cache: %s", cacheID)
-			return cached, nil
+			logger.Infof("Serving data from cache: %s", cacheID)
+			value = append(value, cached...)
+			return nil
 		}
 	}
 
 	logger.Warningf("Error fetching cache key %s: %v", cacheID, err)
 	err = nil
 
-	logger.Infof("Loading summary from store: %s", storeID)
+	logger.Infof("Loading data from store: %s", storeID)
 	sr, err := cs.store.NewReadCloser(storeID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() {
 		if err := sr.Close(); err != nil {
@@ -241,7 +251,7 @@ func (cs ctxCachedStore) Get(cacheID, storeID interface{}) ([]byte, error) {
 
 	data, err := ioutil.ReadAll(sr)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Cache result.
@@ -267,11 +277,101 @@ func (cs ctxCachedStore) Get(cacheID, storeID interface{}) ([]byte, error) {
 		}
 	}()
 
-	return data, nil
+	value = append(value, data...)
+	return nil
 }
 
-// NewCtxCachedStore produces a CachedStore that composes a ReadWritable cache
-// and a Readable store, operating over the input context.Context.
-func NewCtxCachedStore(ctx context.Context, cache ReadWritable, store Readable) CachedStore {
-	return ctxCachedStore{ctx, cache, store}
+// NewByteCachedStore produces a CachedStore that composes a ReadWritable
+// cache and a Readable store, operating over the input context.Context.
+func NewByteCachedStore(ctx context.Context, cache ReadWritable, store Readable) CachedStore {
+	return byteCachedStore{ctx, cache, store}
+}
+
+type ObjectStore interface {
+	Get(id, iValue interface{}) error
+}
+
+type datastoreObjectStore struct {
+	ctx  context.Context
+	kind string
+}
+
+func (s datastoreObjectStore) Get(iID, value interface{}) error {
+	id, ok := iID.(int64)
+	if !ok {
+		return errDatastoreObjectStoreExpectedInt64
+	}
+	key := datastore.NewKey(s.ctx, s.kind, "", id, nil)
+	return datastore.Get(s.ctx, key, value)
+}
+
+func NewDatastoreObjectStore(ctx context.Context, kind string) ObjectStore {
+	return datastoreObjectStore{ctx, kind}
+}
+
+type byteCacheObjectStore struct {
+	ctx   context.Context
+	cache ReadWritable
+	store ObjectStore
+}
+
+func (cs byteCacheObjectStore) Get(cacheID, storeID, value interface{}) error {
+	logger := cs.ctx.Value(DefaultLoggerCtxKey()).(Logger)
+
+	cr, err := cs.cache.NewReadCloser(cacheID)
+	if err == nil {
+		defer func() {
+			if err := cr.Close(); err != nil {
+				logger.Warningf("Error closing cache reader for key %s: %v", cacheID, err)
+			}
+		}()
+		cached, err := ioutil.ReadAll(cr)
+		if err == nil {
+			err = json.Unmarshal(cached, value)
+			if err == nil {
+				logger.Infof("Serving object from cache: %s", cacheID)
+				return nil
+			}
+		}
+	}
+
+	logger.Warningf("Error fetching cache key %s: %v", cacheID, err)
+	err = nil
+
+	logger.Infof("Attempting to load object from store: %s", storeID)
+	err = cs.store.Get(storeID, value)
+	if err != nil {
+		return err
+	}
+
+	// Cache result.
+	go func() {
+		data, err := json.Marshal(value)
+		if err != nil {
+			logger.Warningf("Error serializing data for key %s: %v", cacheID, err)
+			return
+		}
+
+		w, err := cs.cache.NewWriteCloser(cacheID)
+		if err != nil {
+			logger.Warningf("Error cache writer for key %s: %v", cacheID, err)
+			return
+		}
+		defer func() {
+			if err := w.Close(); err != nil {
+				logger.Warningf("Error cache writer for key %s: %v", cacheID, err)
+			}
+		}()
+		n, err := w.Write(data)
+		if err != nil {
+			logger.Warningf("Failed to write to cache key %s: %v", cacheID, err)
+			return
+		}
+		if n != len(data) {
+			logger.Warningf("Failed to write to cache key %s: attempt to write %d bytes, but wrote %d bytes instead", cacheID, len(data), n)
+			return
+		}
+	}()
+
+	return nil
 }
