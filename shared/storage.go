@@ -289,7 +289,73 @@ func NewByteCachedStore(ctx context.Context, cache ReadWritable, store Readable)
 
 // ObjectStore is a store that populates an arbitrary output object on Get().
 type ObjectStore interface {
-	Get(id, iValue interface{}) error
+	Get(id, value interface{}) error
+}
+
+// ObjectCache is an ObjectStore that also supports Put() for arbitrary id/value
+// pairs.
+type ObjectCache interface {
+	ObjectStore
+	Put(id, value interface{}) error
+}
+
+type jsonObjectCache struct {
+	ctx      context.Context
+	delegate ReadWritable
+}
+
+func (oc jsonObjectCache) Get(id, value interface{}) error {
+	r, err := oc.delegate.NewReadCloser(id)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err := r.Close()
+		if err != nil {
+			logger := oc.ctx.Value(DefaultLoggerCtxKey()).(Logger)
+			logger.Warningf("Error closing JSON object cache delegate ReadCloser: %v", err)
+		}
+	}()
+
+	data, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, value)
+}
+
+func (oc jsonObjectCache) Put(id, value interface{}) error {
+	w, err := oc.delegate.NewWriteCloser(id)
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+
+	n, err := w.Write(data)
+	if err != nil {
+		return err
+	}
+	if n != len(data) {
+		return fmt.Errorf("JSON object cache: Attempted to write %d bytes, but wrote %d bytes", len(data), n)
+	}
+
+	err = w.Close()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// NewJSONObjectCache constructs a new JSON object cache, bound to the input
+// context.Context and delgating to the input ReadWritable.
+func NewJSONObjectCache(ctx context.Context, delegate ReadWritable) ObjectCache {
+	return jsonObjectCache{ctx, delegate}
 }
 
 type datastoreObjectStore struct {
@@ -312,75 +378,33 @@ func NewDatastoreObjectStore(ctx context.Context, kind string) ObjectStore {
 	return datastoreObjectStore{ctx, kind}
 }
 
-type byteCacheObjectStore struct {
+type objectCachedStore struct {
 	ctx   context.Context
-	cache ReadWritable
+	cache ObjectCache
 	store ObjectStore
 }
 
-func (cs byteCacheObjectStore) Get(cacheID, storeID, value interface{}) error {
+func (cs objectCachedStore) Get(cacheID, storeID, value interface{}) error {
 	logger := cs.ctx.Value(DefaultLoggerCtxKey()).(Logger)
 
-	cr, err := cs.cache.NewReadCloser(cacheID)
+	err := cs.cache.Get(cacheID, value)
 	if err == nil {
-		defer func() {
-			if err := cr.Close(); err != nil {
-				logger.Warningf("Error closing cache reader for key %s: %v", cacheID, err)
-			}
-		}()
-		cached, err := ioutil.ReadAll(cr)
-		if err == nil {
-			err = json.Unmarshal(cached, value)
-			if err == nil {
-				logger.Infof("Serving object from cache: %s", cacheID)
-				return nil
-			}
-		}
+		logger.Infof("Serving object from cache: %v", cacheID)
+		return nil
 	}
 
-	logger.Warningf("Error fetching cache key %s: %v", cacheID, err)
-	err = nil
+	logger.Warningf("Error fetching cache key %v: %v", cacheID, err)
 
-	logger.Infof("Attempting to load object from store: %s", storeID)
 	err = cs.store.Get(storeID, value)
-	if err != nil {
-		return err
+	if err == nil {
+		logger.Infof("Serving object for store: %v", storeID)
 	}
 
-	// Cache result.
-	go func() {
-		data, err := json.Marshal(value)
-		if err != nil {
-			logger.Warningf("Error serializing data for key %s: %v", cacheID, err)
-			return
-		}
-
-		w, err := cs.cache.NewWriteCloser(cacheID)
-		if err != nil {
-			logger.Warningf("Error cache writer for key %s: %v", cacheID, err)
-			return
-		}
-		defer func() {
-			if err := w.Close(); err != nil {
-				logger.Warningf("Error cache writer for key %s: %v", cacheID, err)
-			}
-		}()
-		n, err := w.Write(data)
-		if err != nil {
-			logger.Warningf("Failed to write to cache key %s: %v", cacheID, err)
-			return
-		}
-		if n != len(data) {
-			logger.Warningf("Failed to write to cache key %s: attempt to write %d bytes, but wrote %d bytes instead", cacheID, len(data), n)
-			return
-		}
-	}()
-
-	return nil
+	return err
 }
 
-// NewByteCacheObjectStore constructs a new CachedStore backed by abyte cache
-// and object store.
-func NewByteCacheObjectStore(ctx context.Context, cache ReadWritable, store ObjectStore) CachedStore {
-	return byteCacheObjectStore{ctx, cache, store}
+// NewObjectCachedStore constructs a new CachedStore backed by an ObjectCache
+// and ObjectStore.
+func NewObjectCachedStore(ctx context.Context, cache ObjectCache, store ObjectStore) CachedStore {
+	return objectCachedStore{ctx, cache, store}
 }
