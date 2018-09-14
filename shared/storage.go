@@ -215,7 +215,7 @@ type byteCachedStore struct {
 
 func (cs byteCachedStore) Get(cacheID, storeID, iValue interface{}) error {
 	logger := cs.ctx.Value(DefaultLoggerCtxKey()).(Logger)
-	value, ok := iValue.([]byte)
+	valuePtr, ok := iValue.(*[]byte)
 	if !ok {
 		return errByteCachedStoreExpectedByteSlice
 	}
@@ -230,7 +230,7 @@ func (cs byteCachedStore) Get(cacheID, storeID, iValue interface{}) error {
 		cached, err := ioutil.ReadAll(cr)
 		if err == nil {
 			logger.Infof("Serving data from cache: %s", cacheID)
-			value = append(value, cached...)
+			*valuePtr = cached
 			return nil
 		}
 	}
@@ -277,7 +277,7 @@ func (cs byteCachedStore) Get(cacheID, storeID, iValue interface{}) error {
 		}
 	}()
 
-	value = append(value, data...)
+	*valuePtr = data
 	return nil
 }
 

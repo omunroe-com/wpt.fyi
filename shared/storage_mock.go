@@ -119,14 +119,48 @@ func (m *MockCachedStore) EXPECT() *MockCachedStoreMockRecorder {
 }
 
 // Get mocks base method
-func (m *MockCachedStore) Get(cacheID, storeID interface{}) ([]byte, error) {
-	ret := m.ctrl.Call(m, "Get", cacheID, storeID)
-	ret0, _ := ret[0].([]byte)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+func (m *MockCachedStore) Get(cacheID, storeID, value interface{}) error {
+	ret := m.ctrl.Call(m, "Get", cacheID, storeID, value)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // Get indicates an expected call of Get
-func (mr *MockCachedStoreMockRecorder) Get(cacheID, storeID interface{}) *gomock.Call {
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockCachedStore)(nil).Get), cacheID, storeID)
+func (mr *MockCachedStoreMockRecorder) Get(cacheID, storeID, value interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockCachedStore)(nil).Get), cacheID, storeID, value)
+}
+
+// MockObjectStore is a mock of ObjectStore interface
+type MockObjectStore struct {
+	ctrl     *gomock.Controller
+	recorder *MockObjectStoreMockRecorder
+}
+
+// MockObjectStoreMockRecorder is the mock recorder for MockObjectStore
+type MockObjectStoreMockRecorder struct {
+	mock *MockObjectStore
+}
+
+// NewMockObjectStore creates a new mock instance
+func NewMockObjectStore(ctrl *gomock.Controller) *MockObjectStore {
+	mock := &MockObjectStore{ctrl: ctrl}
+	mock.recorder = &MockObjectStoreMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use
+func (m *MockObjectStore) EXPECT() *MockObjectStoreMockRecorder {
+	return m.recorder
+}
+
+// Get mocks base method
+func (m *MockObjectStore) Get(id, iValue interface{}) error {
+	ret := m.ctrl.Call(m, "Get", id, iValue)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Get indicates an expected call of Get
+func (mr *MockObjectStoreMockRecorder) Get(id, iValue interface{}) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockObjectStore)(nil).Get), id, iValue)
 }
