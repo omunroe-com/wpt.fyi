@@ -287,6 +287,7 @@ func NewByteCachedStore(ctx context.Context, cache ReadWritable, store Readable)
 	return byteCachedStore{ctx, cache, store}
 }
 
+// ObjectStore is a store that populates an arbitrary output object on Get().
 type ObjectStore interface {
 	Get(id, iValue interface{}) error
 }
@@ -305,6 +306,8 @@ func (s datastoreObjectStore) Get(iID, value interface{}) error {
 	return datastore.Get(s.ctx, key, value)
 }
 
+// NewDatastoreObjectStore constructs a new ObjectStore backed by datastore
+// objects of a particular kind.
 func NewDatastoreObjectStore(ctx context.Context, kind string) ObjectStore {
 	return datastoreObjectStore{ctx, kind}
 }
@@ -374,4 +377,10 @@ func (cs byteCacheObjectStore) Get(cacheID, storeID, value interface{}) error {
 	}()
 
 	return nil
+}
+
+// NewByteCacheObjectStore constructs a new CachedStore backed by abyte cache
+// and object store.
+func NewByteCacheObjectStore(ctx context.Context, cache ReadWritable, store ObjectStore) CachedStore {
+	return byteCacheObjectStore{ctx, cache, store}
 }
